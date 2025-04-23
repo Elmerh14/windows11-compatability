@@ -1,3 +1,0 @@
-([('main',
-   '/Users/elmerhernandez/windows11-compatability/dist/main',
-   'EXECUTABLE')],)
