@@ -1,6 +1,9 @@
+import tkinter as tk
+from tkinter import scrolledtext, messagebox
 import requests
 from bs4 import BeautifulSoup
-# import wmi
+import wmi
+import subprocess
 
 
 def extractData():
@@ -28,13 +31,12 @@ def extractData():
     return supported_cpus
 
 def getProccessor():
-    # c = wmi.WMI()
+    c = wmi.WMI()
 
-    # for cpu in c.Win32_Processor():
-    #     name = cpu.Name
+    for cpu in c.Win32_Processor():
+        name = cpu.Name
 
-    # return name
-    return "11th Gen Intel(R) Core(TM) i5-1145G7 @ 2.60GHz   1.50 GHz"
+    return name
 
 def normalizeComputerProccessor(name):
     normalizedName = name.lower().replace('-', ' ')
@@ -47,24 +49,82 @@ def isItCompatable(name, supported_list):
             return True
     return False
 
+def checkSecureBoot():
+    try:
+        output = subprocess.check_output([
+            "powershell",
+            "-Command",
+            "Confirm-SecureBootUEFI"
+        ]).decode().strip()
+        
+        if output == "True":
+            return True
+        elif output == "False":
+            return False
+        else:
+            return None  # Secure Boot not supported or unknown
+    except Exception as e:
+        return None
+    
+def checkTpm():
+    try:
+        output = subprocess.check_output([
+            "powershell",
+            "-Command",
+            "Get-WmiObject -Namespace 'Root\\CIMv2\\Security\\MicrosoftTpm' -Class Win32_Tpm"
+        ]).decode()
 
-def main():
-    # cpus = extractData()
-    # for cpu in cpus:
-    #     print(cpu)
+        if 'IsEnabled_InitialValue' in output and 'True' in output:
+            version_line = [line for line in output.splitlines() if 'SpecVersion' in line]
+            version = version_line[0].split(':')[1].strip() if version_line else 'Unknown'
+            return True, version
+        else:
+            return False, "TPM not enabled or not found"
+    except Exception as e:
+        return False, f"Error checking TPM: {e}"
+
+def run_checks(output_box):
+    output_box.delete('1.0', tk.END)
 
     supported_cpus = extractData()
     detected_cpu = getProccessor()
     normalized_cpu = normalizeComputerProccessor(detected_cpu)
-
-    print(f"Detected CPU: {detected_cpu}")
-    print(f"Normalized CPU: {normalized_cpu}")
+    
+    output_box.insert(tk.END, f"Detected CPU: {detected_cpu}\n")
+    output_box.insert(tk.END, f"Normalized CPU: {normalized_cpu}\n")
 
     if isItCompatable(normalized_cpu, supported_cpus):
-        print("✅ Your CPU is compatible with Windows 11!")
+        output_box.insert(tk.END, "✅ CPU is compatible with Windows 11.\n")
     else:
-        print("❌ Your CPU is NOT on the supported list for Windows 11.")
+        output_box.insert(tk.END, "❌ CPU is NOT compatible with Windows 11.\n")
 
+    secure_boot = checkSecureBoot()
+    if secure_boot is True:
+        output_box.insert(tk.END, "✅ Secure Boot is ENABLED.\n")
+    elif secure_boot is False:
+        output_box.insert(tk.END, "❌ Secure Boot is DISABLED.\n")
+    else:
+        output_box.insert(tk.END, "⚠️ Secure Boot status could not be determined.\n")
+
+    tpm_status, tpm_info = checkTpm()
+    if tpm_status:
+        output_box.insert(tk.END, f"✅ TPM is ENABLED. Version: {tpm_info}\n")
+    else:
+        output_box.insert(tk.END, f"❌ TPM Check Failed. Reason: {tpm_info}\n")
+
+def main():
+    root = tk.Tk()
+    root.title("Windows 11 Compatibility Checker")
+    root.geometry("600x400")
+
+    tk.Label(root, text="Windows 11 Compatibility Checker", font=("Helvetica", 16)).pack(pady=10)
+
+    output_box = scrolledtext.ScrolledText(root, wrap=tk.WORD, width=70, height=15)
+    output_box.pack(padx=10, pady=10)
+
+    tk.Button(root, text="Check Compatibility", command=lambda: run_checks(output_box)).pack(pady=5)
+
+    root.mainloop()
 
 if __name__ == "__main__":
     main()
